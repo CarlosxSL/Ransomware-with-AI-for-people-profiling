@@ -31,7 +31,19 @@ class ClientSession:
                 data = self.conn.recv(BUFFER_SIZE)
                 if not data:
                     break
-                self.output.put(data.decode('utf-8', errors='replace'))
+                buffer += data.decode('utf-8', errors='replace')
+                # Procesa por linea 
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    self.output.put(line)
+                    # Decodifica el formato JSON 
+                     try:
+                        parsed = json.loads(line)
+                        print("[*] Datos JSON recibidos:")
+                        print(json.dumps(parsed, indent=4))
+                    # Si no esta en formato JSON, simplemente lo almacenamos como salida normal
+                    except json.JSONDecodeError:
+                        pass
             except:
                 break
         self.active = False
