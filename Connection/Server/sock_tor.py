@@ -21,13 +21,12 @@ def init_mongodb():
         mongo_client = MongoClient(mongo_uri)
         # Ping para verificar la conexion
         mongo_client.admin.command('ping')
-        mongo_db = mongo_client['clientes'] # Tu nombre de base de datos
-        mongo_collection = mongo_db['conexiones'] # Tu nombre de coleccion
+        mongo_db = mongo_client['clientes'] #  nombre de base de datos
+        mongo_collection = mongo_db['conexiones'] #  nombre de coleccion
         print("[+] Conexion a MongoDB establecida exitosamente.")
     except ConnectionFailure as e:
         print(f"[!] Fallo al conectar a MongoDB: {e}")
         print("[!] Asegurate de que MongoDB esta corriendo y sea accesible.")
-        # Aqui puedes decidir si el programa debe salir o intentar reconectar
         exit(1) # Salir si no se puede conectar a la base de datos
     except Exception as e:
         print(f"[!] Error inesperado al iniciar MongoDB: {e}")
