@@ -4,7 +4,7 @@ import time
 import logging
 from threading import Thread, Event
 import matplotlib.pyplot as plt
-from SistemaECIES import enc_file
+from SistemaECIES import encryption
 
 logging.basicConfig(
     filename='encriptacion_errores.log',
@@ -58,7 +58,7 @@ for category, folder in DIRS.items():
         
         file_start = time.perf_counter()
         try:
-            success, blob, enc_path = enc_file(path, del_orig=False)
+            success, blob, enc_path = encryption(path, del_orig=False)
             if success:
                 ok += 1
                 file_times.append(time.perf_counter() - file_start)
@@ -155,3 +155,4 @@ axes[1, 1].grid(True, alpha=0.3, axis='y')
 
 plt.tight_layout()
 plt.show()
+
