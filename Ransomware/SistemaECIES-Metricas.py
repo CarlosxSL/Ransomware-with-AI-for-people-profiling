@@ -18,6 +18,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1
 
+# ============================================================================
+# LOGGING 
+# ============================================================================
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -35,10 +38,6 @@ PUB_KEY = b"""-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEvv915Q1SWQ+K5D5+Eq69r75iyoH6
 52e1sNf8DOl0PX36ZYnlDnZ14ljSLoI3C26wO/qHzQELJhUvHsSnQhjgqQ==
 -----END PUBLIC KEY-----"""
-
-# ============================================================================
-# CÓDIGO DE CIFRADO ORIGINAL (SIN MODIFICACIONES)
-# ============================================================================
 
 def gen_key():
     return bytearray(secrets.token_bytes(32))
@@ -235,7 +234,7 @@ def encrypt_dir(dir_path):
     return files
 
 # ============================================================================
-# MONITOR DE RECURSOS EN TIEMPO REAL
+# MONITOR DE METRICAS
 # ============================================================================
 
 class MonitorRecursos:
@@ -298,7 +297,7 @@ class MonitorRecursos:
         }
 
 # ============================================================================
-# EVALUACIÓN CON MÉTRICAS MEJORADAS
+# EVALUACIÓN CON MÉTRICAS
 # ============================================================================
 
 def evaluar_con_metricas(dir_path, nombre_grupo, output_dir="resultados"):
@@ -524,7 +523,7 @@ def generar_grafica_comparativa(resultados_grupos, output_dir="resultados"):
     logger.info(f"Gráfica comparativa guardada: {archivo_comparativa}")
 
 # ============================================================================
-# EJEMPLOS DE USO
+# EJECUCION
 # ============================================================================
 
 if __name__ == "__main__":
@@ -572,4 +571,5 @@ if __name__ == "__main__":
     
     # Generar comparativa si hay múltiples grupos
     if len(resultados_todos) >= 2:
+
         generar_grafica_comparativa(resultados_todos, "resultados")
