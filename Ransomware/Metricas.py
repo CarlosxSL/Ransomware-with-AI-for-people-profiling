@@ -2,6 +2,8 @@ import psutil
 import os
 import time
 import logging
+import json
+import sys
 from threading import Thread, Event
 import matplotlib.pyplot as plt
 from SistemaECIES import encryption
@@ -12,147 +14,189 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-DIRS = {
-    "pequeños": "ruta/carpeta_pequenos",
-    "medianos": "ruta/carpeta_medianos",
-    "grandes": "ruta/carpeta_grandes",
-}
-SAMPLE_INTERVAL = 0.1
+SAMPLE_INTERVAL = 0.05  # Reducido para capturar más datos
+RESULTS_DIR = r"Resultados_3"
+MIN_SAMPLES = 5  # Mínimo de muestras para generar gráfica
+
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 process = psutil.Process(os.getpid())
 process.cpu_percent()
 
 def monitor(stop, ram, cpu, t):
+    """Monitorea el uso de recursos del sistema durante la encriptación."""
     start = time.perf_counter()
     while not stop.is_set():
         ram.append(process.memory_info().rss / 1024 / 1024)
-        cpu.append(process.cpu_percent(interval=0.1))
+        cpu.append(process.cpu_percent(interval=0.01))
         t.append(time.perf_counter() - start)
         time.sleep(SAMPLE_INTERVAL)
 
-results = {}
-
-for category, folder in DIRS.items():
-    if not os.path.exists(folder):
-        print(f"Error: {folder} no existe")
-        continue
+def encriptar_directorio(directorio):
+    """
+    Encripta todos los archivos en un directorio y monitorea el rendimiento.
+    
+    Args:
+        directorio: Ruta del directorio a encriptar
+        
+    Returns:
+        dict: Diccionario con métricas de rendimiento y archivos encriptados
+    """
+    if not os.path.exists(directorio):
+        print(f"Error: El directorio '{directorio}' no existe")
+        return None
+    
+    # Contar archivos a procesar
+    total = len([f for root, _, names in os.walk(directorio) for f in names 
+                 if not f.endswith(".enc") and not f.startswith(".tmp_enc_")])
+    
+    if total == 0:
+        print(f"No hay archivos para encriptar en '{directorio}'")
+        return None
+    
+    print(f"Iniciando encriptación de {total} archivo(s)...")
     
     ram, cpu, t = [], [], []
     stop = Event()
-    ok = total = 0
-    total_size = 0
-    file_times = []
     
-    monitor_thread = Thread(target=monitor, args=(stop, ram, cpu, t))
+    # Capturar métricas iniciales
+    ram.append(process.memory_info().rss / 1024 / 1024)
+    cpu.append(process.cpu_percent(interval=0.01))
+    t.append(0.0)
+    
+    monitor_thread = Thread(target=monitor, args=(stop, ram, cpu, t), daemon=True)
     start_total = time.perf_counter()
     monitor_thread.start()
     
-    for file in os.listdir(folder):
-        path = os.path.join(folder, file)
-        if not os.path.isfile(path):
-            continue
-        
-        total += 1
-        file_size = os.path.getsize(path)
-        total_size += file_size
-        
-        file_start = time.perf_counter()
-        try:
-            success, blob, enc_path = encryption(path, del_orig=False)
-            if success:
-                ok += 1
-                file_times.append(time.perf_counter() - file_start)
-            else:
-                logging.error(f"Fallo: {path}")
-        except Exception as e:
-            logging.error(f"Error {path}: {str(e)}")
+    # Pequeña pausa para asegurar que el monitor capture datos
+    time.sleep(0.05)
+    
+    try:
+        files = encryption(directorio)
+        ok = len(files)
+    except Exception as e:
+        logging.error(f"Error encriptando {directorio}: {str(e)}")
+        ok = 0
+        files = []
+    
+    # Esperar un poco antes de detener el monitor
+    time.sleep(0.1)
+    
+    # Capturar métricas finales
+    elapsed = time.perf_counter() - start_total
+    ram.append(process.memory_info().rss / 1024 / 1024)
+    cpu.append(process.cpu_percent(interval=0.01))
+    t.append(elapsed)
     
     stop.set()
-    monitor_thread.join()
-    end_total = time.perf_counter()
+    monitor_thread.join(timeout=1.0)
     
-    results[category] = {
+    resultados = {
         "ram": ram,
         "cpu": cpu,
-        "time": end_total - start_total,
+        "time": elapsed,
         "ok": ok,
         "total": total,
         "t": t,
-        "total_size_mb": total_size / 1024 / 1024,
-        "avg_file_time": sum(file_times) / len(file_times) if file_times else 0,
-        "throughput": (total_size / 1024 / 1024) / (end_total - start_total) if end_total - start_total > 0 else 0
+        "archivos_encriptados": files
     }
-
-# RESULTADOS
-print("\n" + "="*60)
-print("RESULTADOS DE ENCRIPTACIÓN")
-print("="*60)
-
-for cat, d in results.items():
-    print(f"\nCategoría: {cat}")
-    print(f"  Archivos totales: {d['total']}")
-    print(f"  Archivos exitosos: {d['ok']}")
-    print(f"  Tasa de éxito: {(d['ok']/d['total'])*100:.2f}%")
-    print(f"  Tamaño total: {d['total_size_mb']:.2f} MB")
-    print(f"  Tiempo total: {d['time']:.2f} s")
-    print(f"  Tiempo promedio/archivo: {d['avg_file_time']:.3f} s")
-    print(f"  Throughput: {d['throughput']:.2f} MB/s")
-    print(f"  RAM promedio: {sum(d['ram'])/len(d['ram']):.2f} MB")
-    print(f"  RAM pico: {max(d['ram']):.2f} MB")
-    print(f"  CPU promedio: {sum(d['cpu'])/len(d['cpu']):.2f}%")
-    print(f"  CPU pico: {max(d['cpu']):.2f}%")
-
-# GRÁFICAS INDIVIDUALES
-fig, axes = plt.subplots(2, len(results), figsize=(15, 8))
-
-for idx, (cat, d) in enumerate(results.items()):
-    # RAM
-    axes[0, idx].plot(d["t"], d["ram"], color='#2E86AB', linewidth=2)
-    axes[0, idx].fill_between(d["t"], d["ram"], alpha=0.3, color='#2E86AB')
-    axes[0, idx].set_title(f"RAM - {cat}")
-    axes[0, idx].set_xlabel("Tiempo (s)")
-    axes[0, idx].set_ylabel("MB")
-    axes[0, idx].grid(True, alpha=0.3)
     
-    # CPU
-    axes[1, idx].plot(d["t"], d["cpu"], color='#A23B72', linewidth=2)
-    axes[1, idx].fill_between(d["t"], d["cpu"], alpha=0.3, color='#A23B72')
-    axes[1, idx].set_title(f"CPU - {cat}")
-    axes[1, idx].set_xlabel("Tiempo (s)")
-    axes[1, idx].set_ylabel("%")
-    axes[1, idx].grid(True, alpha=0.3)
+    return resultados
 
-plt.tight_layout()
+def generar_grafica(resultados, nombre_categoria):
+    """Genera gráfica de métricas solo si hay suficientes datos."""
+    
+    if len(resultados['t']) < MIN_SAMPLES:
+        print(f"⚠ Tiempo de encriptación muy breve ({resultados['time']:.3f}s)")
+        print(f"  No se generó gráfica (se requieren al menos {MIN_SAMPLES} muestras)")
+        return False
+    
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+    
+    ax1.set_xlabel('Tiempo (s)', fontsize=12)
+    ax1.set_ylabel('RAM (MB)', color='#2E86AB', fontsize=12)
+    ax1.plot(resultados["t"], resultados["ram"], color='#2E86AB', 
+             linewidth=2, label='Uso RAM', marker='o', markersize=3)
+    ax1.fill_between(resultados["t"], resultados["ram"], alpha=0.3, color='#2E86AB')
+    ax1.tick_params(axis='y', labelcolor='#2E86AB')
+    ax1.grid(True, alpha=0.3, linestyle='--')
+    ax1.legend(loc='upper left')
+    
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('CPU (%)', color='#A23B72', fontsize=12)
+    ax2.plot(resultados["t"], resultados["cpu"], color='#A23B72', 
+             linewidth=2, label='Uso CPU', marker='s', markersize=3)
+    ax2.fill_between(resultados["t"], resultados["cpu"], alpha=0.3, color='#A23B72')
+    ax2.tick_params(axis='y', labelcolor='#A23B72')
+    ax2.legend(loc='upper right')
+    
+    plt.title(f'Métricas de Encriptación - {nombre_categoria}', fontsize=14, fontweight='bold')
+    fig.tight_layout()
+    
+    ruta_imagen = os.path.join(RESULTS_DIR, f'metricas_{nombre_categoria}.png')
+    plt.savefig(ruta_imagen, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"✓ Gráfica guardada: {ruta_imagen}")
+    return True
 
-# GRÁFICAS COMPARATIVAS
-fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+def guardar_resultados(resultados, nombre_categoria):
+    """Guarda métricas y lista de archivos encriptados en formato JSON."""
+    
+    metricas = {
+        "archivos_totales": resultados['total'],
+        "archivos_exitosos": resultados['ok'],
+        "tiempo_total_segundos": round(resultados['time'], 4),
+        "muestras_capturadas": len(resultados['ram']),
+        "ram_promedio_mb": round(sum(resultados['ram'])/len(resultados['ram']), 2) if resultados['ram'] else 0,
+        "ram_pico_mb": round(max(resultados['ram']), 2) if resultados['ram'] else 0,
+        "cpu_promedio_porcentaje": round(sum(resultados['cpu'])/len(resultados['cpu']), 2) if resultados['cpu'] else 0,
+        "cpu_pico_porcentaje": round(max(resultados['cpu']), 2) if resultados['cpu'] else 0,
+        "tasa_exito_porcentaje": round((resultados['ok']/resultados['total'])*100, 2) if resultados['total'] > 0 else 0
+    }
+    
+    # Guardar métricas
+    ruta_metricas = os.path.join(RESULTS_DIR, f'metricas_{nombre_categoria}.json')
+    with open(ruta_metricas, 'w', encoding='utf-8') as f:
+        json.dump(metricas, f, indent=2, ensure_ascii=False)
+    
+    # Guardar lista de archivos encriptados
+    if resultados['archivos_encriptados']:
+        ruta_archivos = os.path.join(RESULTS_DIR, f'archivos_encriptados_{nombre_categoria}.json')
+        with open(ruta_archivos, 'w', encoding='utf-8') as f:
+            json.dump(resultados['archivos_encriptados'], f, indent=2, ensure_ascii=False)
+    
+    return metricas
 
-categories = list(results.keys())
-throughputs = [results[c]['throughput'] for c in categories]
-avg_times = [results[c]['avg_file_time'] for c in categories]
-ram_peaks = [max(results[c]['ram']) for c in categories]
-cpu_peaks = [max(results[c]['cpu']) for c in categories]
+def imprimir_resumen(metricas, nombre_categoria):
+    """Imprime un resumen de las métricas en consola."""
+    print(f"\n{'='*60}")
+    print(f"RESUMEN - {nombre_categoria}")
+    print(f"{'='*60}")
+    print(f"Archivos procesados:  {metricas['archivos_exitosos']}/{metricas['archivos_totales']}")
+    print(f"Tiempo total:         {metricas['tiempo_total_segundos']:.3f} segundos")
+    print(f"Tasa de éxito:        {metricas['tasa_exito_porcentaje']:.2f}%")
+    print(f"\nUso de RAM:")
+    print(f"  - Promedio:         {metricas['ram_promedio_mb']:.2f} MB")
+    print(f"  - Pico:             {metricas['ram_pico_mb']:.2f} MB")
+    print(f"\nUso de CPU:")
+    print(f"  - Promedio:         {metricas['cpu_promedio_porcentaje']:.2f}%")
+    print(f"  - Pico:             {metricas['cpu_pico_porcentaje']:.2f}%")
+    print(f"{'='*60}\n")
 
-axes[0, 0].bar(categories, throughputs, color='#06A77D')
-axes[0, 0].set_title("Throughput por categoría")
-axes[0, 0].set_ylabel("MB/s")
-axes[0, 0].grid(True, alpha=0.3, axis='y')
+# Ejecución principal sin main ni argv
+directorio_a_encriptar = "Archivos"  # Cambiar según sea necesario
+categoria_nombre = "Cifrado_53GB"  # Sirve para nombrar archivos de resultados
+resultados = encriptar_directorio(directorio_a_encriptar)
 
-axes[0, 1].bar(categories, avg_times, color='#F18F01')
-axes[0, 1].set_title("Tiempo promedio por archivo")
-axes[0, 1].set_ylabel("Segundos")
-axes[0, 1].grid(True, alpha=0.3, axis='y')
+if resultados:
+    metricas = guardar_resultados(resultados, categoria_nombre)
+    imprimir_resumen(metricas, categoria_nombre)
+    generar_grafica(resultados, categoria_nombre)
 
-axes[1, 0].bar(categories, ram_peaks, color='#2E86AB')
-axes[1, 0].set_title("RAM pico")
-axes[1, 0].set_ylabel("MB")
-axes[1, 0].grid(True, alpha=0.3, axis='y')
 
-axes[1, 1].bar(categories, cpu_peaks, color='#A23B72')
-axes[1, 1].set_title("CPU pico")
-axes[1, 1].set_ylabel("%")
-axes[1, 1].grid(True, alpha=0.3, axis='y')
 
-plt.tight_layout()
-plt.show()
+
+
+
 
